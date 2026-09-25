@@ -1,0 +1,182 @@
+# End-to-End Spotify Data Engineering ETL Pipeline on AWS
+
+An end-to-end cloud-based Data Engineering ETL (Extract, Transform, Load) pipeline built on AWS to process and transform Spotify datasets. The pipeline extracts raw data from Amazon S3, transforms it using AWS Glue Visual ETL, loads cleaned datasets in columnar Parquet format into an S3 Data Warehouse, catalogs metadata via AWS Glue Crawler, and enables analytical queries via Amazon Athena and visualization with AWS QuickSight.
+
+## 🏛️ Architecture Overview
+
+```
+[ Raw Data (S3 Staging Layer) ] 
+               │
+               ▼
+   [ AWS Glue Visual ETL ]  ── (Joins, Null Filters, Cleansing)
+               │
+               ▼
+[ Clean Data (S3 Warehouse - Parquet) ]
+               │
+               ▼
+[ AWS Glue Crawler & Data Catalog ]
+               │
+               ▼
+      [ Amazon Athena ]
+               │
+               ▼
+    [ AWS QuickSight BI ]
+
+```
+
+### Pipeline Workflow:
+
+1. **Raw Staging Layer (S3):** Ingestion of raw datasets (Albums, Artists, Tracks).
+
+2. **ETL Processing (AWS Glue Studio):** Visual ETL job performing joins, removing nulls/duplicates, dropping sparse columns, and converting data format.
+
+3. **Data Warehouse (S3):** Cleaned data stored in optimized Parquet format.
+
+4. **Metadata Management (AWS Glue Crawler):** Scans warehouse data to generate and update schema catalog entries.
+
+5. **Analytics & BI (Amazon Athena & QuickSight):** SQL analysis on cataloged tables and visual reporting.
+
+## 📊 Dataset Information
+
+* **Source:** [Kaggle - Spotify Dataset 2023](https://www.kaggle.com/datasets/tonygordonjr/spotify-dataset-2023?utm_source=gemini)
+
+* **Entities:**
+
+  * `album` (Album metadata)
+
+  * `artist` (Artist metadata and genres)
+
+  * `track` (Audio features and track details)
+
+## 🛠️ Prerequisites & AWS IAM Configuration
+
+### 1. Developer IAM User (`user_1`) Setup
+
+Create an IAM user for managing and testing the pipeline assets.
+
+* **User Name:** `user_1`
+
+* **Attached Policies:**
+
+  * `AmazonS3FullAccess`
+
+  * `AWSGlueConsoleFullAccess`
+
+  * `AmazonAthenaFullAccess`
+
+  * `AWSQuickSightAthenaAccess`
+
+  * `AWSQuickSightDescribeRDS`
+
+### 2. Service IAM Role for AWS Glue (`glue_access_s3`)
+
+Create an IAM Service Role for AWS Glue jobs and Crawlers to interact with S3.
+
+* **Role Name:** `glue_access_s3`
+
+* **Trusted Entity:** AWS Glue (`glue.amazonaws.com`)
+
+* **Attached Policies:**
+
+  * `AmazonS3FullAccess`
+
+  * `AWSGlueServiceRole` (Recommended for baseline Glue logging & capabilities)
+
+## 🚀 Step-by-Step Implementation
+
+### Step 1: Create S3 Bucket & Staging Structure
+
+1. Create a globally unique S3 bucket (e.g., `spotify-etl-pipeline-bucket`).
+
+2. Create two top-level directories:
+
+   * `/staging/` — Raw files landing zone.
+
+   * `/warehouse/` — Transformed data target directory.
+
+3. Upload raw Spotify files (`album.csv`, `artist.csv`, `track.csv`) to `s3://<your-bucket-name>/staging/`.
+
+### Step 2: Build AWS Glue Visual ETL Pipeline
+
+1. Open **AWS Glue Studio** and select **Visual ETL**.
+
+2. **Role Assignment:** Assign the IAM role `glue_access_s3`.
+
+3. **Source Configuration:**
+
+   * Define 3 S3 Data Sources pointing to the `staging` folder for `album`, `artist`, and `track`.
+
+4. **Transformations Applied:**
+
+   * **Join Nodes:** Join datasets using common keys (e.g., `artist_id`, `id`).
+
+   * **Deduplication:** Filter out duplicate records across datasets.
+
+   * **Null/Empty Value Cleanup (Drop Fields):**
+
+     * **Album fields dropped:** `artists`, `artist_6`, `artist_7`, `artist_8`, `artist_9`, `artist_10`, `artist_11`
+
+     * **Track fields dropped:** `id` (or empty ID records)
+
+     * **Artist fields dropped:** `id`, `genre_4`, `genre_5`, `genre_6`
+
+5. **Target Configuration:**
+
+   * **Format:** Apache Parquet (Columnar format optimized for fast query performance).
+
+   * **Destination:** `s3://<your-bucket-name>/warehouse/`
+
+6. **Save & Run Job:** Name the ETL job **`Spotify etl`** and execute it.
+
+### Step 3: Run AWS Glue Crawler & Build Data Catalog
+
+1. Navigate to **AWS Glue Crawlers** and click **Create Crawler**.
+
+2. **Target Path:** Point to the output directory `s3://<your-bucket-name>/warehouse/`.
+
+3. **IAM Role:** Assign `glue_access_s3`.
+
+4. **Output Database:** Create/select a Glue Data Catalog database (e.g., `my_first_database_catalog`).
+
+5. **Run Crawler:** Execute the crawler to scan the Parquet files and automatically generate table schemas.
+
+### Step 4: Query Data with Amazon Athena
+
+1. Open **Amazon Athena**.
+
+2. Set up an S3 bucket location for Athena query results under Settings (if prompted).
+
+3. Select `my_first_database_catalog` from the database dropdown.
+
+4. Execute test validation queries:
+
+```
+SELECT * 
+FROM my_first_database_catalog.data_warehouse 
+LIMIT 10;
+
+```
+
+### Step 5: Visualize Data using AWS QuickSight
+
+1. Open **AWS QuickSight**.
+
+2. Create a new dataset choosing **Athena** as the data source.
+
+3. Select `my_first_database_catalog` and pick the `data_warehouse` table generated by the Glue Crawler.
+
+4. Build dashboards to visualize music analytics, top artists, genre distributions, and track trends.
+
+## 🧹 Key Data Transformations Summary
+
+| Target Entity | Operations & Fields Dropped | Target Format | 
+ | ----- | ----- | ----- | 
+| **Album** | Filter nulls, drop `artists`, `artist_6` through `artist_11` | Parquet | 
+| **Track** | Filter empty/null records in `id` | Parquet | 
+| **Artist** | Filter nulls, drop `id`, `genre_4` through `genre_6` | Parquet | 
+
+## 🔒 Security Best Practices
+
+* Ensure standard least-privilege principles are evaluated for production deployments.
+
+* Utilize S3 server-side encryption (SSE-S3 or SSE-KMS) for data at rest.
